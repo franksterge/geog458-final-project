@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>Airports in the US</title>
+  <link href="css/c3.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/mobile.css">
+  <link rel="stylesheet" href="css/leaflet.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css" />
+  <link href="https://fonts.googleapis.com/css?family=Titillium+Web|Oswald" rel="stylesheet">
+  <script src="js/d3.js"></script>
+  <script src="js/c3.min.js"></script>
+  <script src="js/leaflet.js"></script>
+  <script src="js/chroma.min.js"></script>
+  <script src="js/jquery-3.3.1.min.js"></script>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+  <script src="./js/us_states.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-ajax/2.1.0/leaflet.ajax.min.js"></script>
+  <style>
+    .legend {
+        line-height: 16px;
+        width: 140px;
+        color: #333333;
+        font-family: 'Titillium Web', sans-serif;
+        padding: 6px 8px;
+        background: white;
+        background: rgba(255,255,255,0.5);
+        box-shadow: 0 0 15px rgba(0,0,0,0.2);
+        border-radius: 5px;
+    }
+
+    .legend i {
+        width: 16px;
+        height: 16px;
+        float: left;
+        margin-right: 8px;
+        opacity: 0.9;
+    }
+
+    .legend img {
+        width: 16px;
+        height: 16px;
+        margin-right: 3px;
+        float: left;
+    }
+
+    .legend p {
+        font-size: 12px;
+        line-height: 16px;
+        margin: 0;
+    }
+
+  </style>
+</head>
+
+<body>
+  <main>
+    <div id="mobiledeck">
+
+      <div class="placename">US</div>
+      <p>
+        <span class="mobile-title"># airports in the selected state: </span>
+        <span class="state-count">n/a</span>
+      <p>
+
+      <p>
+        <span class="mobile-title"># Airports in the US: </span>
+        <span class="total-count"></span>
+      <p>
+
+    </div>
+
+    <div id="info">
+      <div id="title">
+        US Airports Map
+      </div>
+
+      <p><span class="placename">US</span></p>
+      <div class="card-deck counts">
+        <div class="card">
+          <div class="card-body county">
+            <h5 class="card-title"> # airports in the selected state
+            </h5>
+          </div>
+          <p class="card-text">
+            <span class="state-count">N/A</span>
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-body state">
+            <h5 class="card-title"># Airports in the US</h5>
+            <p class="card-text">
+              <span class="total-count"></span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div id="county-chart"></div>
+
+      <div id="footer">
+        <p>This is a map that plots the position of each airport in the US. The map has following features:</p>
+        <li>Airports are color-coded to reflece different states that they are in.</li>
+        <li>Each state has fill-color based on the number of airports it has.</li>
+        <li>The chart is interactive in that clicking the statistic of each bar will bring the focus of the map to that state.</li>
+        <li>The map is interative in that clicking each state will chage the number under "# airports in teh selected state", as well as the name of the state on the top of the card.</li>
+      </div>
+    </div>
+
+
+    <div id="map"></div>
+
+  </main>
+  <script>
+    //create the base map and set the initial view point
+     // 1. Create a map object.
+     var mymap = L.map('map', {
+        center: [39.8097343, -98.5556199],
+        zoom: 5,
+        maxZoom: 10,
+        minZoom: 3,
+        detectRetina: true});
+
+    // 2. Add a base map.
+    L.tileLayer('http://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png').addTo(mymap);
+
+    // 3. Add cell towers GeoJSON Data
+    // Null variable that will hold cell tower data
+    var airports = null;
+
+
+    // 4. build up a set of colors from colorbrewer's dark2 category
+    var stateColors = chroma.scale('Dark2').mode('lch').colors(50);
+
+    // 5. dynamically append style classes to this page. This style classes will be used for colorize the markers.
+    for (i = 0; i < stateColors.length; i++) {
+        $('head').append($("<style> .marker-color-" + i.toString() + " { color: " + stateColors[i] + "; font-size: 15px; text-shadow: 0 0 3px #ffffff;} </style>"));
+    }
+
+    // 6. Set function for color ramp
+    colorRamps = chroma.scale('YlOrRd').colors(5);
+    for (i = 0; i < colorRamps.length; i++) {
+      $('head').append($("<style> .state-color-" + (i + 1).toString() + " { color: " + colorRamps[i] + "} </style>"));
+    }
+
+    // var rchart, cellTowersLayer, countiesLayer = null, counties = {};
+
+    var statesLayer;
+    var states = {};
+    //load all datasets through d3 and store them in an array
+    Promise.all([
+      d3.json("assets/airports.geojson"),
+      d3.json("assets/us-states.geojson"),
+    ]).then(function(datasets) {
+        $('.total-count').text(datasets[0].features.length)
+        var airportsLayer = L.geoJSON(datasets[0], {
+            onEachFeature: function (feature, layer) {
+                layer.bindPopup(feature.properties.AIRPT_NAME);
+            },
+            pointToLayer: function (feature, latlng) {
+                var id = stateAbbreviations.indexOf(feature.properties.STATE)
+
+                return L.marker(latlng, {icon: L.divIcon({className: 'fa fa-plane marker-color-' + id.toString() })});
+            }
+        }).addTo(mymap);
+
+        colors = chroma.scale('OrRd').colors(5);
+
+        function setColor(count) {
+            var colorVal
+            if (count >= 0 && count < 10) {
+                colorVal = 0
+            } else if (count >= 10 && count < 20) {
+                colorVal = 1
+            } else if (count >= 20 && count < 30) {
+                colorVal = 2
+            } else if (count >= 30 && count < 40) {
+                colorVal = 3
+            } else {
+                colorVal = 4
+            }
+            return colors[colorVal]
+
+        }
+
+        function style(feature) {
+            return {
+                fillColor: setColor(feature.properties.count),
+                fillOpacity: 0.4,
+                weight: 2,
+                opacity: 1,
+                color: '#b4b4b4',
+                dashArray: '4'
+            };
+        }
+
+    //this function works when there's a click on the map
+    //will highlight the layer that the mouse clicked
+        function highlightFeature(e) {
+            // e indicates the current event
+            var feature = e.target; //the target capture the object which the event associates with
+            feature.setStyle({
+            weight: 2,
+            opacity: 0.8,
+            color: '#e3e3e3',
+            fillColor: '#00ffd9',
+            fillOpacity: 0.1
+            });
+        }
+
+        function clickFeature(e) {
+            L.DomEvent.stopPropagation(e);
+            $("#hint").text("Click here to the global trend.");
+            displayPlace(e.target.feature.properties.name);
+        }
+
+      // 3.2.3 reset the hightlighted feature when the mouse is out of its region.
+      function resetHighlight(e) {
+        statesLayer.resetStyle(e.target);
+      }
+
+        // 3.3 add these event the layer obejct.
+        function onEachFeature(feature, layer) {
+            layer.on({
+                mouseover: highlightFeature,
+                click: clickFeature,
+                mouseout: resetHighlight
+            });
+        }
+
+        statesLayer = L.geoJSON(datasets[1], {
+            style: style,
+            onEachFeature: onEachFeature
+        }).addTo(mymap);
+
+        //display the onclick feature's name to the tag with class 'placename' and 'state-count'on dashboard
+        function displayPlace(name) {
+            $(".placename").text(name);
+            $(".state-count").text(states[name]);
+        }
+
+
+        mymap.on('click', onMapClick);
+
+        //while click on the map, it will set the placename and state-count to defaulr 'oregon N/A'
+        function onMapClick(e) {
+            $(".placename").text("US");
+            $(".state-count").text("N/A");
+        }
+
+        //add the county name as key and the number of cell tower as values
+        //in a dictionary declared before
+        datasets[1].features.forEach(function(d) {
+            states[d.properties.name] = d.properties.count;
+        })
+
+
+        // this function take a dictionary, return a dictionary that sorted by the number of cell towers.
+        function sortJsObject(obj) {
+            items = Object.keys(obj).map(function(key) {
+                return [key, obj[key]];
+            });
+            items.sort(function(first, second) {
+                return second[1] - first[1];
+            });
+            sorted_obj = {}
+            $.each(items, function(k, v) {
+                use_key = v[0]
+                use_value = v[1]
+                sorted_obj[use_key] = use_value
+            })
+            return (sorted_obj)
+        }
+
+      states_sorted = sortJsObject(states);
+
+        //store the key(county name) of the dictionary into an array
+        x = Object.keys(states_sorted).slice(0, 10);
+        x.reverse();
+        x.push("state");
+        x.reverse();
+
+        //store the value(count of cell tower) of the dictionary into an array
+        y = Object.values(states_sorted).slice(0, 10);
+        y.reverse();
+        y.push("#");
+        y.reverse();
+
+        //generate the chart
+        rchart = c3.generate({
+            size: {
+                height: 350,
+                width: 460
+            },
+            data: {
+                x: 'state',
+                columns: [x, y],
+                type: 'bar', //a bar chart
+                // onmouseover: function(d) {
+                //   displayPlace(x[d.x + 1]);
+                // },
+                onclick: function(d) {
+                    var stateName = x[d.x + 1];
+                    displayPlace(stateName);
+                    datasets[1].features.forEach(function(t) {
+                        if (t.properties.name == stateName) {
+                            stateBound = L.geoJSON(t)
+                            mymap.fitBounds(stateBound.getBounds());
+                            maymap.setZoom(16);
+                        }
+                    }) ;
+                }
+            },
+            axis: {
+                x: { //county
+                    type: 'category',
+                    tick: {
+                        rotate: -60,
+                        multiline: false
+                    }
+                },
+                y: { //count
+                    tick: {
+                        values: [10, 20, 30, 40, 50, 60, 191]
+                    },
+                }
+            },
+            legend: {
+                show: false
+            },
+            bindto: "#county-chart" //dispay in the element with "county-chart" id
+      });
+      // 9. Create Leaflet Control Object for Legend
+      var legend = L.control({position: 'topright'});
+
+      // 10. Function that runs when legend is added to map
+      legend.onAdd = function () {
+          // Create Div Element and Populate it with HTML
+          colors = chroma.scale('OrRd').colors(5);
+          var div = L.DomUtil.create('div', 'legend');
+          div.innerHTML += '<b>Airport Count</b><br />';
+          var ranges = ['0-9', '10-19', '20-29', '30-39', '40+']
+          for(var i = 0; i < 5; i++) {
+              div.innerHTML += '<i style="background: ' + colors[i] + '"></i><p>'+  ranges[i] + '</p>';
+          }
+          return div;
+      };
+
+      // 11. Add a legend to map
+      legend.addTo(mymap);
+      L.control.scale({position: 'bottomright'}).addTo(mymap);
+    });
+
+// 12. Add a scale bar to map
+
+  </script>
+</body>
+</html>
